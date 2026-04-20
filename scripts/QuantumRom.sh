@@ -77,8 +77,8 @@ GET_PROP() {
 
 
 DOWNLOAD_FIRMWARE() {
-    if [ "$#" -lt 4 ]; then
-        echo -e "Usage: ${FUNCNAME[0]} <MODEL> <CSC> <IMEI> <DOWNLOAD_DIRECTORY> [VERSION]"
+    if [ "$#" -lt 5 ]; then
+        echo -e "Usage: ${FUNCNAME[0]} <MODEL> <CSC> <IMEI> <DOWNLOAD_DIRECTORY> <FIRMWARE_URL>"
         return 1
     fi
 
@@ -86,69 +86,43 @@ DOWNLOAD_FIRMWARE() {
     local CSC="$2"
     local IMEI="$3"
     local DOWN_DIR="${4}/$MODEL"
-    local VERSION="${5:-}"
+    local URL="$5"
 
     rm -rf "$DOWN_DIR"
     mkdir -p "$DOWN_DIR"
 
     echo -e "======================================"
-    echo -e "${YELLOW}  Samsung FW Downloader   ${NC}"
+    echo -e "${YELLOW}  Samsung FW Downloader (Direct Link)   ${NC}"
     echo -e "======================================"
     echo -e "MODEL: $MODEL | CSC: $CSC"
+    echo -e "URL: $URL"
 
-    # --- Step 1: Determine Version ---
-    if [ -n "$VERSION" ]; then
-        echo -e "- Downloading provided version: $VERSION"
-    else
-        echo -e "- Fetching latest firmware..."
-
-        VERSION=$(python3 -m samloader -m "$MODEL" -r "$CSC" -i "$IMEI" checkupdate 2>&1)
-
-        if [ $? -ne 0 ] || [ -z "$VERSION" ]; then
-            echo -e "- MODEL/CSC/IMEI not valid or no update found."
-            echo -e "- Error: $VERSION"
-            return 1
-        fi
-
-        echo -e "- Latest version found: $VERSION"
-    fi
-
-    echo
-
-    # --- Step 2: Download Firmware ---
-    python3 -m samloader -m "$MODEL" -r "$CSC" -i "$IMEI" download -v "$VERSION" -O "$DOWN_DIR"
-    if [ $? -ne 0 ]; then
-        echo -e "- Download failed. Check IMEI/MODEL/CSC."
+    if [ -z "$URL" ]; then
+        echo -e "- ⛔️ FIRMWARE_URL is empty. Provide a direct HTTPS link."
         exit 1
     fi
 
-    # --- Step 3: Decrypt Firmware ---
-    enc_file=$(find "$DOWN_DIR" -name "*.enc*" | head -n 1)
+    local OUTPUT_FILE="$DOWN_DIR/${MODEL}.zip"
 
-    if [ -z "$enc_file" ]; then
-        echo -e "- No encrypted firmware file found!"
+    echo -e "- 📥 Downloading firmware via direct link..."
+    wget --no-check-certificate --progress=bar:force "$URL" -O "$OUTPUT_FILE"
+
+    if [ $? -ne 0 ] || [ ! -f "$OUTPUT_FILE" ]; then
+        echo -e "- ⛔️ Download failed. Check URL or network."
         exit 1
     fi
 
-    python3 -m samloader -m "$MODEL" -r "$CSC" -i "$IMEI" decrypt \
-        -v "$VERSION" \
-        -i "$enc_file" \
-        -o "${DOWN_DIR}/${MODEL}.zip" >/dev/null 2>&1
-
-    if [ $? -ne 0 ]; then
-        echo -e "- Decryption failed."
-        exit 1
+    # Handle .zip.md5 files
+    if [[ "$URL" == *.md5 ]]; then
+        echo -e "- 🔧 Detected .zip.md5 format. Removing MD5 suffix..."
+        mv "$OUTPUT_FILE" "$DOWN_DIR/${MODEL}.zip"
+        OUTPUT_FILE="$DOWN_DIR/${MODEL}.zip"
     fi
 
-    # --- Show Firmware Info ---
-    file_size=$(du -m "${DOWN_DIR}/${MODEL}.zip" | cut -f1)
-
-    echo
-    echo -e "- Firmware decrypted successfully! Size: ${file_size} MB"
-    echo -e "- Saved to: ${DOWN_DIR}/${MODEL}.zip"
-
-    # --- Cleanup ---
-    rm -f "$enc_file"
+    local file_size
+    file_size=$(du -m "$OUTPUT_FILE" | cut -f1)
+    echo -e "- ✅ Firmware downloaded successfully! Size: ${file_size} MB"
+    echo -e "- Saved to: $OUTPUT_FILE"
 }
 
 
