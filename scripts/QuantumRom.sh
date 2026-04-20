@@ -82,33 +82,46 @@ DOWNLOAD_FIRMWARE() {
         return 1
     fi
 
-    local MODEL="$1" CSC="$2" IMEI="$3" DOWN_DIR="${4}/$MODEL" URL="$5"
+    local MODEL="$1"
+    local CSC="$2"
+    local IMEI="$3"
+    local DOWN_DIR="${4}/$MODEL"
+    local URL="$5"
+
     rm -rf "$DOWN_DIR"
     mkdir -p "$DOWN_DIR"
 
-    echo -e "${YELLOW}📥 Samsung FW Downloader${NC}"
-    echo "MODEL: $MODEL | CSC: $CSC"
-    [[ -z "$URL" ]] && { echo "- ⛔ FIRMWARE_URL is empty"; exit 1; }
+    echo -e "======================================"
+    echo -e "${YELLOW}  Samsung FW Downloader (Direct Link)   ${NC}"
+    echo -e "======================================"
+    echo -e "MODEL: $MODEL | CSC: $CSC"
+    echo -e "URL: $URL"
 
-    # Pre-flight HTTP check to catch 404 before downloading
-    echo "- 🌐 Verifying link..."
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -L "$URL")
-    if [[ "$HTTP_CODE" != "200" ]]; then
-        echo -e "⛔ Download failed: HTTP $HTTP_CODE (Link expired or Cloudflare blocked)"
-        echo "💡 Fix: Generate a fresh direct link from SamFw/SamMobile (valid ~24h) or use samloader."
+    if [ -z "$URL" ]; then
+        echo -e "- ⛔️ FIRMWARE_URL is empty. Provide a direct HTTPS link."
         exit 1
     fi
 
     local OUTPUT_FILE="$DOWN_DIR/${MODEL}.zip"
-    echo "- 📥 Downloading..."
-    wget --no-check-certificate --progress=bar:force "$URL" -O "$OUTPUT_FILE" 2>/dev/null
-    if [ $? -ne 0 ] || [ ! -s "$OUTPUT_FILE" ]; then
-        echo -e "- ⛔️ Download failed or file empty."
+
+    echo -e "- 📥 Downloading firmware via direct link..."
+    wget --no-check-certificate --progress=bar:force "$URL" -O "$OUTPUT_FILE"
+
+    if [ $? -ne 0 ] || [ ! -f "$OUTPUT_FILE" ]; then
+        echo -e "- ⛔️ Download failed. Check URL or network."
         exit 1
     fi
 
-    [[ "$URL" == *.md5 ]] && mv "$OUTPUT_FILE" "$DOWN_DIR/${MODEL}.zip"
-    echo -e "- ✅ Firmware downloaded successfully! Size: $(du -m "$OUTPUT_FILE" | cut -f1) MB"
+    # Handle .zip.md5 files
+    if [[ "$URL" == *.md5 ]]; then
+        echo -e "- 🔧 Detected .zip.md5 format. Removing MD5 suffix..."
+        mv "$OUTPUT_FILE" "$DOWN_DIR/${MODEL}.zip"
+        OUTPUT_FILE="$DOWN_DIR/${MODEL}.zip"
+    fi
+
+    local file_size
+    file_size=$(du -m "$OUTPUT_FILE" | cut -f1)
+    echo -e "- ✅ Firmware downloaded successfully! Size: ${file_size} MB"
     echo -e "- Saved to: $OUTPUT_FILE"
 }
 
